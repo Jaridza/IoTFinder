@@ -10,8 +10,8 @@ from parser import build_dns_queries
 from thresholds import calculate_thresholds
 
 
+# TODO: remove this function, it is not used anymore
 def get_iot_domains(pcap, popular_domains_file, device_mapping_file):
-    # TODO: do this when parsing the pcap file, so we don't have to do it here again
     """"
     Extracts IoT domains from a pcap file, filtering out popular domains and non-IoT devices.
     Used to calculate the IDF (Inverse Document Frequency) for IoT domains.
@@ -61,47 +61,54 @@ def get_iot_domains(pcap, popular_domains_file, device_mapping_file):
 def main():
     # ----- Step 1: parse & filter -----
     print("Building DNS queries DataFrame…")
-    # IoTDNS_dns_queries = build_dns_queries(
-    #     pcap_file='../data/raw/IoTDNS/dns_2019_08.pcap',
-    #     # max_packets=500000,
-    #     # used to filter non-IoT devices (fingerprints have to be formed from IoT devices only)
-    #     device_mapping_file='../data/raw/IoTDNS/device_mapping.csv'
-    # )
-    # save to feather file
-    # IoTDNS_dns_queries.to_feather("../data/processed/large/iot_queries_BIG.feather")
-    # print(f"Number of DNS queries: {len(IoTDNS_dns_queries)}")
-    # load father file
-    IoTDNS_dns_queries = pd.read_feather("../data/processed/large/iot_queries_BIG.feather")
-
-    # ----- Step 2: fingerprint -----
-    print("Building fingerprints…")
-
-    w = 3600  # 1 hour in seconds
-    # fingerprints = build_fingerprints(IoTDNS_dns_queries, w)
-    # TODO: add new column for device_name here? or leave inside the function?
-    # save to feather file
-    # fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.dumps)
-    # fingerprints.to_feather("../data/processed/large/fingerprints_BIG.feather")
-    # print(f"Number of fingerprints: {len(fingerprints)}")
-    # load feather file
-    fingerprints = pd.read_feather("../data/processed/large/fingerprints_BIG.feather")
-    fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.loads)
-
-    # ----- Step 3: compute idf  -----
-    iot_domains = get_iot_domains(
-        pcap='../data/raw/IoTDNS/dns_2019_08.pcap',
-        # used to filter out popular domains (from May 13, 2025)
-        popular_domains_file='../data/raw/cloudflare-radar_top-100-domains_20250513.csv',
-        device_mapping_file='../data/raw/IoTDNS/device_mapping.csv'
+    IoTDNS_dns_queries, iot_domains = build_dns_queries(
+        pcap_file='../data/raw/IoTDNS/dns_2019_08.pcap',
+        # max_packets=500000,
+        # used to filter non-IoT devices (fingerprints have to be formed from IoT devices only)
+        device_mapping_file='../data/raw/IoTDNS/device_mapping.csv',
+        popular_domains_file='../data/raw/cloudflare-radar_top-100-domains_20250513.csv'
     )
+
+    # save to feather file
+    IoTDNS_dns_queries.to_feather("../data/processed/large/iot_queries_BIG.feather")
+    print(f"Number of DNS queries: {len(IoTDNS_dns_queries)}")
+    # load father file
+    # IoTDNS_dns_queries = pd.read_feather("../data/processed/large/iot_queries_BIG.feather")
+
     # save to feather file
     iot_domains.to_feather("../data/processed/large/domains_BIG.feather")
     # load feather file
     # iot_domains = pd.read_feather("../data/processed/large/domains_BIG.feather")
 
+    # ----- Step 2: fingerprint -----
+    print("Building fingerprints…")
+
+    w = 3600  # 1 hour in seconds
+    fingerprints = build_fingerprints(IoTDNS_dns_queries, w)
+    # TODO: add new column for device_name here? or leave inside the function?
+    # save to feather file
+    fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.dumps)
+    fingerprints.to_feather("../data/processed/large/fingerprints_BIG.feather")
+    print(f"Number of fingerprints: {len(fingerprints)}")
+    # load feather file
+    # fingerprints = pd.read_feather("../data/processed/large/fingerprints_BIG.feather")
+    fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.loads)
+
+    # ----- Step 3: compute idf  -----
+    # iot_domains = get_iot_domains(
+    #     pcap='../data/raw/IoTDNS/dns_2019_08.pcap',
+    #     # used to filter out popular domains (from May 13, 2025)
+    #     popular_domains_file='../data/raw/cloudflare-radar_top-100-domains_20250513.csv',
+    #     device_mapping_file='../data/raw/IoTDNS/device_mapping.csv'
+    # )
+    # # save to feather file
+    # iot_domains.to_feather("../data/processed/large/domains_BIG.feather")
+    # # load feather file
+    # # iot_domains = pd.read_feather("../data/processed/large/domains_BIG.feather")
+
     print("Building IDF DataFrame…")
     pdns_dns_queries, domains_idf, pdns_total_time = compute_idf("../data/raw/IoTDNS/pdns.pcap",
-                              iot_domains)
+                              iot_domains, IoTDNS_dns_queries)
 
     # save to feather file
     pdns_dns_queries.to_feather("../data/processed/large/pdns_queries_BIG.feather")

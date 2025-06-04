@@ -3,7 +3,7 @@ import pyshark
 from tqdm import tqdm
 import numpy as np
 
-def compute_idf(path, iot_domains):
+def compute_idf(path, iot_domains, IoTDNS_queries):
     """
     Compute the IDF (Inverse Document Frequency) for each fingerprint in the dataset.
     Args:
@@ -43,17 +43,32 @@ def compute_idf(path, iot_domains):
 
     dns_queries = pd.DataFrame(queries_rows)
 
-    dns_queries['timestamp'] = pd.to_numeric(dns_queries['timestamp'])
-    total_time = dns_queries['timestamp'].max() - dns_queries['timestamp'].min()
+    # NOW IoTDNS are used to calculate the idf of the domains
+    IoTDNS_queries['timestamp'] = pd.to_numeric(IoTDNS_queries['timestamp'])
+    total_time = IoTDNS_queries['timestamp'].max() - IoTDNS_queries['timestamp'].min()
 
-    domain_to_ips = dns_queries.groupby('query_name')['ip'].agg(set).reset_index().rename(columns={'ip': 'ips_set'})
+    domain_to_ips = IoTDNS_queries.groupby('query_name')['ip'].agg(set).reset_index().rename(columns={'ip': 'ips_set'})
 
     # calculate idf
-    # Nc(qi) = number of client that queried domain qi
+    # Nc(qi) = number of clients that queried domain qi
     domain_to_ips['Nc_qi'] = domain_to_ips['ips_set'].apply(len)
 
-    Nc = len(set.union(*domain_to_ips['ips_set'].tolist())) # 47
-
+    Nc = len(set.union(*domain_to_ips['ips_set'].tolist()))  # Total number of unique IPs querying IoT domains
     domain_to_ips['idf'] = np.log(1 + (Nc / (domain_to_ips['Nc_qi'] + 1)))
+
+    # this was from the pdns - it was used to calculate the idfs of the domains
+
+    # dns_queries['timestamp'] = pd.to_numeric(dns_queries['timestamp'])
+    # total_time = dns_queries['timestamp'].max() - dns_queries['timestamp'].min()
+
+    # domain_to_ips = dns_queries.groupby('query_name')['ip'].agg(set).reset_index().rename(columns={'ip': 'ips_set'})
+    #
+    # # calculate idf
+    # # Nc(qi) = number of client that queried domain qi
+    # domain_to_ips['Nc_qi'] = domain_to_ips['ips_set'].apply(len)
+    #
+    # Nc = len(set.union(*domain_to_ips['ips_set'].tolist())) # 47
+    #
+    # domain_to_ips['idf'] = np.log(1 + (Nc / (domain_to_ips['Nc_qi'] + 1)))
 
     return dns_queries, domain_to_ips, total_time
