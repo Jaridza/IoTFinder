@@ -7,7 +7,6 @@ def build_dns_queries(pcap_file, device_mapping_file, popular_domains_file):
     Process DNS queries from a pcap file and returns:
     - A DataFrame of all DNS queries from IoT devices.
     - A DataFrame of IoT domains (excluding popular domains).
-
     Args:
         pcap_file (str): Path to the pcap file.
         device_mapping_file (str): Path to the CSV file containing device mapping used to filter non-iot devices.
@@ -31,11 +30,9 @@ def build_dns_queries(pcap_file, device_mapping_file, popular_domains_file):
     # ipaddresses = iot_mapping[1].tolist()
     iot_ip_set = set(iot_mapping[1])
 
-    # Initialize DataFrame for IoT devices
-    # iot_devices_queries = pd.DataFrame(columns=['ip', 'query_name', 'timestamp'])
-    # iot_rows = []
     iot_rows = set()
     domain_rows = set()
+    # all_devices_rows = set()
 
     # Process pcap file
     capture = pyshark.FileCapture(input_file=pcap_file, display_filter='dns',)
@@ -47,19 +44,16 @@ def build_dns_queries(pcap_file, device_mapping_file, popular_domains_file):
 
             domain = packet.dns.qry_name
             ip = packet.ip.dst
+            timestamp = packet.frame_info.time_relative
+
+            # add to all devices rows
+            # all_devices_rows.add((ip, domain, timestamp))
 
             if ip not in iot_ip_set:
                 continue
 
             if domain not in popular_domains:
                 domain_rows.add(domain)
-
-            timestamp = packet.frame_info.time_relative
-            # new_row = {
-            #     'ip': ip,
-            #     'query_name': domain,
-            #     'timestamp': packet.frame_info.time_relative,
-            # }
 
             iot_rows.add((ip, domain, timestamp))
 
@@ -68,7 +62,8 @@ def build_dns_queries(pcap_file, device_mapping_file, popular_domains_file):
     finally:
         capture.close()
 
-    # iot_devices_queries = pd.DataFrame(iot_rows)
+    # all_devices = pd.DataFrame.from_records(list(all_devices_rows), columns=['ip', 'query_name', 'timestamp'])
+
     iot_devices_queries = pd.DataFrame.from_records(
         list(iot_rows),
         columns=['ip', 'query_name', 'timestamp']

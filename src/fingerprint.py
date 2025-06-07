@@ -40,7 +40,8 @@ def build_fingerprints(query_df, window_time):
                           names=["device_name", "ip"])
 
     fingerprints = fingerprints.merge(mapping, on='ip', how='left')
+    print("remove ip column?")
     print(fingerprints.head())
     # TODO: remove the ip column?
-
+    fingerprints.drop(columns=['ip'], inplace=True)
     return fingerprints

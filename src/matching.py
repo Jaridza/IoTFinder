@@ -160,7 +160,7 @@ def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf, t
     print("Best matches by absolute score:")
     print(best_by_score)
     print(best_by_relative)
-    print("\nBest matches by margin above threshold:")
+    print("Best matches by margin above threshold:")
     return best_by_relative
 
 
