@@ -2,22 +2,31 @@ import pandas as pd
 import re,ast
 import numpy as np
 
-from fingerprint import build_fingerprints
+from fingerprint import compute_window_probabilities
 
 
-def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idfs):
+def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idf_df):
     """
     Calculate the TF-IDF vector representation for IoT devices based on DNS queries.
     This function reads fingerprints and IDF values, then computes the TF-IDF vectors
+    for each IoT device.
+    Args:
+        w (int): Time window size in seconds.
+        total_time (float): Total time span of the DNS queries in seconds.
+        fingerprints (pd.DataFrame): DataFrame containing IoT device fingerprints with 'fingerprint' column.
+        idf_df (pd.DataFrame): DataFrame containing IDF values for domains with 'query_name' and 'idf' columns.
+    Returns:
+        pd.DataFrame: DataFrame containing IoT device fingerprints with TF-IDF vectors.
     """
-    Nt = total_time / w  # Number of time windows
+    # Nt = total_time / w  # Number of time windows
+    Nt = float(np.ceil(total_time / w))
 
     # compute TF-IDF vector representation
-    # fkj = pkj * Nt (pkj is the probability of each domain? for each ip?
+    # fkj = pkj * Nt
     # we get vector Vk {(qkj, fkj)}
-    # we get TD-IDF: fkj * IDF (of domain) (we get a vector per device in over total_time)
+    # we get TD-IDF: fkj * IDF (of domain)
 
-    idf_dict = dict(zip(idfs['query_name'], idfs['idf']))
+    idf_dict = dict(zip(idf_df['query_name'], idf_df['idf']))
     tf_idf_column = []
     for index, row in fingerprints.iterrows():
         tf_idf_row = []
@@ -33,13 +42,6 @@ def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idfs):
             # get tf-idf vector
             idf = idf_dict.get(t[0], 0.0)
 
-            # match = idfs[idfs['query_name'] == t[0]]
-            # if not match.empty:
-            #     idf = match['idf'].values[0]
-            # else:
-            #     print(f"Domain {t[0]} not found in idf dataframe.")
-            #     idf = 0.0
-
             psi = fkj * idf
             tf_idf_row.append((t[0], psi))
 
@@ -51,13 +53,21 @@ def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idfs):
 def compute_tf_idf_for_clients(dns_queries, w):
     """
     Compute the TF-IDF vectors for clients based on their DNS queries.
-    This function reads fingerprints and IDF values, computes the TF-IDF vectors
-    for each client.
+    This function calculates the probabilities of each query appearing in a given time window.
+    Args:
+        dns_queries (pd.DataFrame): DataFrame containing DNS queries with columns ['ip', 'query_name', 'timestamp'].
+        w (int): Size of the time window in seconds.
+    Returns:
+        pd.DataFrame: DataFrame with columns ['ip', 'tf_idf'] where tf_idf is a list of tuples (query_name, probability).
+        The tf_idf column represents the DNS behavior of each client.
     """
-    # compute the tf-idf vector for a client Ci
-    #TODO: change so that it has the same structure as the build_fingerprints function except the last part
-    # and here we do need to ip so
-    client_tf_idf_vector = build_fingerprints(dns_queries,w)
+    probabilities = compute_window_probabilities(dns_queries, w)
+
+    client_tf_idf_vector = (probabilities.groupby('ip')
+                            .apply(lambda x: pd.Series({'tf_idf': list(zip(x['query_name'], x['probabilities']))}),
+                                   include_groups=False)
+                            .reset_index())
+
     return client_tf_idf_vector
 
 
@@ -67,14 +77,14 @@ def safe_dict_from_vec(vec):
     """
     if not vec:
         return {}
-    # If it’s still a string, try literal_eval
+
     if isinstance(vec, str):
         cleaned = re.sub(r'np\.float64\(\s*([^)]+?)\s*\)', r'\1', vec)
         try:
             vec = ast.literal_eval(cleaned)
         except Exception:
             return {}
-    # Now assume it’s iterable
+
     out = {}
     for item in vec:
         if isinstance(item, (list, tuple)) and len(item) == 2:
@@ -83,6 +93,14 @@ def safe_dict_from_vec(vec):
     return out
 
 def compute_cosine_similarity(psi, gamma):
+    """
+    Compute the cosine similarity between two vectors psi and gamma (two numpy arrays).
+    Args:
+        psi (np.ndarray): First vector (IoT device fingerprint).
+        gamma (np.ndarray): Second vector (client TF-IDF vector).
+    Returns:
+        float: Cosine similarity score between psi and gamma.
+    """
     dot = np.dot(psi, gamma)
     norm_psi = float(np.linalg.norm(psi))
     norm_gamma = float(np.linalg.norm(gamma))
@@ -95,8 +113,7 @@ def compute_cosine_similarity(psi, gamma):
 
     return similarity_score
 
-def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf, thresholds_df):
-    #TODO: split this, one part calculates similarity scores, the other part calculates the best matches
+def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf):
     """
     Compute similarity scores between IoT device fingerprints and client TF-IDF vectors.
     This function calculates the similarity score for each client against each IoT device.
@@ -104,17 +121,15 @@ def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf, t
         fingerprints (pd.DataFrame): DataFrame containing IoT device fingerprints with 'fingerprint' column.
         client_tf_idf_vector (pd.DataFrame): DataFrame containing client TF-IDF vectors with 'fingerprint' column.
         domains_idf (pd.DataFrame): DataFrame containing IDF values for domains with 'query_name' and 'idf' columns.
-        thresholds_df (pd.DataFrame): DataFrame containing device thresholds with 'device_name' and 'threshold' columns.
     Returns:
         pd.DataFrame: DataFrame containing the best similarity scores for each client.
     """
-    # Apply it once to each DF
     fingerprints['tf_idf_dict'] = (
         fingerprints['tf_idf']
         .apply(safe_dict_from_vec)
     )
     client_tf_idf_vector['tf_idf_dict'] = (
-        client_tf_idf_vector['fingerprint']
+        client_tf_idf_vector['tf_idf']
         .apply(safe_dict_from_vec)
     )
 
@@ -143,13 +158,20 @@ def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf, t
             scores.append((client_ip, dev_name, similarity_score))
 
     scores_df = pd.DataFrame(scores, columns=['client_ip', 'device_name', 'similarity_score'])
+    return scores_df
 
-    # merge with scores_df to get the device threshold
+
+def get_best_matches(scores_df, thresholds_df):
+    """
+    Get the best matches for each client based on similarity scores and thresholds.
+    Args:
+        scores_df (pd.DataFrame): DataFrame containing similarity scores with 'client_ip', 'device_name', and 'similarity_score' columns.
+        thresholds_df (pd.DataFrame): DataFrame containing device thresholds with 'device_name' and 'threshold' columns.
+    Returns:
+        pd.DataFrame: DataFrame containing the best matches for each client.
+    """
     merged = scores_df.merge(thresholds_df, on='device_name')
-
     matches = merged[merged['similarity_score'] >= merged['threshold']].copy()
-
-    # calculate relative similarity score
     matches['relative'] = matches['similarity_score'] - matches['threshold']
 
     best_by_score = matches.loc[matches.groupby('client_ip')['similarity_score'].idxmax()]
@@ -162,7 +184,5 @@ def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf, t
     print(best_by_relative)
     print("Best matches by margin above threshold:")
     return best_by_relative
-
-
 
 
