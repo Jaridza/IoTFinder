@@ -50,6 +50,10 @@ def build_dns_queries(pcap_file, popular_domains_file, filter_non_iot, non_iot_d
         list(iot_rows),
         columns=['ip', 'query_name', 'timestamp']
     )
+
+    iot_devices_queries['timestamp'] = pd.to_numeric(iot_devices_queries['timestamp'])
+    total_time = iot_devices_queries['timestamp'].max() - iot_devices_queries['timestamp'].min()
+
     iot_domains = pd.DataFrame({'query_name': list(domain_rows)})
 
-    return iot_devices_queries, iot_domains
+    return iot_devices_queries, iot_domains, total_time

@@ -7,7 +7,8 @@ from pyarrow.feather import read_feather
 from sklearn.metrics import roc_curve
 from tqdm import tqdm
 
-from matching import compute_tf_idf_for_clients
+from matching import compute_tf_idf_for_clients, compute_cosine_similarity
+
 
 def process_dns_queries(path):
     """
@@ -22,7 +23,7 @@ def process_dns_queries(path):
     queries_rows = []
 
     with pyshark.FileCapture(input_file=path,display_filter='dns') as capture:
-        for packet in tqdm(capture, desc="Processing packets - in idf.py"):
+        for packet in tqdm(capture, desc="Processing packets - no filtering.py"):
             if "DNS" not in packet:
                 continue
 
@@ -133,11 +134,6 @@ def calculate_thresholds(ldns_path, window_time, fingerprints, idf):
             fpr_A, t_A = fpr_f[low_index], thr_f[low_index]
             fpr_B, t_B = fpr_f[high_index], thr_f[high_index]
 
-
-            # If they’re the same FPR, just pick t_A
-            # if fpr_B == fpr_A:
-            #     t_F = t_A
-            # else:
             t_F = t_A + (phi - fpr_A) * (t_B - t_A) / (fpr_B - fpr_A)
 
             theta_k = max(0.5, (t_A + t_F) / 2)
