@@ -6,7 +6,7 @@ import ast
 import matching
 from fingerprint import build_fingerprints
 from idf import compute_idf
-from parser import build_dns_queries
+from parsing import build_dns_queries
 from thresholds import calculate_thresholds, process_dns_queries
 
 
@@ -19,23 +19,23 @@ def main():
                           "192.168.0.113", "192.168.0.138", "192.168.0.151", "192.168.0.159"]
 
     IoTDNS_dns_queries, iot_domains, Tl_total_time = build_dns_queries(
-        pcap_file='../data/raw/IoTDNS/v1_iotdns.pcap',
-        popular_domains_file='../data/raw/cloudflare-radar_top-100-domains_20250513.csv',
+        pcap_file='../data/raw/_iotdnsv2.pcap',
+        popular_domains_file='../data/raw/top100domains2025.csv',
         filter_non_iot=True,
         non_iot_device_ips=non_iot_device_ips
     )
 
     print("Tl_total_time:", Tl_total_time)
 
-    # Tl_total_time = 1716563.835197
-    # save to feather file
-    IoTDNS_dns_queries.to_feather("../data/processed/large/iot_queries_BIG.feather")
-    # load father file
+    Tl_total_time = 1716563.835197
+    # # save to feather file
+    # IoTDNS_dns_queries.to_feather("../data/processed/large/iot_queries_BIG.feather")
+    # # load father file
     # IoTDNS_dns_queries = pd.read_feather("../data/processed/large/iot_queries_BIG.feather")
-
-    # save to feather file
-    iot_domains.to_feather("../data/processed/large/domains_BIG.feather")
-    # load feather file
+    #
+    # # save to feather file
+    # iot_domains.to_feather("../data/processed/large/domains_BIG.feather")
+    # # load feather file
     # iot_domains = pd.read_feather("../data/processed/large/domains_BIG.feather")
 
     # ----- Step 2: fingerprint -----
@@ -45,60 +45,60 @@ def main():
     fingerprints = build_fingerprints(IoTDNS_dns_queries, w, device_mapping_file="../data/raw/IoTDNS/device_mapping.csv")
 
     # save to feather file
-    fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.dumps)
-    fingerprints.to_feather("../data/processed/large/fingerprints_BIG.feather")
-    # load feather file
-    # fingerprints = pd.read_feather("../data/processed/large/fingerprints_BIG.feather")
+    # fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.dumps)
+    # fingerprints.to_feather("../data/processed/large/fingerprints_v3.feather")
+    # # load feather file
+    # fingerprints = pd.read_feather("../data/processed/large/fingerprints_v3.feather")
 
     # never comment out
     fingerprints['fingerprint'] = fingerprints['fingerprint'].apply(json.loads)
 
     # ----- Step 3: compute idf  -----
     print("Building IDF DataFrame...")
-    domains_idf = compute_idf("../data/raw/IoTDNS/v1_Tp.pcap", iot_domains)
+    domains_idf = compute_idf("../data/raw/IoTDNS/_tpv2.pcap", iot_domains)
 
     # save to feather file
-    domains_idf.to_feather("../data/processed/large/idf_BIG.feather")
+    # domains_idf.to_feather("../data/processed/large/idf_v3.feather")
     # load feather file
-    # domains_idf = pd.read_feather("../data/processed/large/
+    # domains_idf = pd.read_feather("../data/processed/large/idf_v3.feather")
 
     # ----- Step 4: calculate thresholds -----
     print("Calculating thresholds for IoT devices")
     tl_tf_idf_iot_devices = matching.calculate_tf_idf_for_iot_devices(w, Tl_total_time, fingerprints, domains_idf)
 
-    thresholds = calculate_thresholds("../data/raw/IoTDNS/v1_ldns.pcap", w, tl_tf_idf_iot_devices, iot_domains)
+    thresholds = calculate_thresholds("../data/raw/IoTDNS/_ldnsv2.pcap", w, tl_tf_idf_iot_devices, domains_idf)
     # save to feather file
-    thresholds.to_feather("../data/processed/large/thresholds_BIG.feather")
+    # thresholds.to_feather("../data/processed/large/thresholds_v3.feather")
 
     # load feather file
-    # thresholds = pd.read_feather("../data/processed/large/thresholds_BIG.feather")
+    # thresholds = pd.read_feather("../data/processed/large/thresholds_v3.feather")
 
     # ----- Step 5: calculate tf-idf -----
     print("Calculating TF-IDF for clients and IoT devices...")
-    Tt_processed, Tt_total_time = process_dns_queries(path='../data/raw/IoTDNS/v1_Tt.pcap')
+    Tt_processed, Tt_total_time = process_dns_queries(path='../data/raw/IoTDNS/dns_2019_09.pcap')
     print(f"Total time for Tt: {Tt_total_time} ")
     # save Total time
     # Tt_total_time = 1263364.827363
 
     # save to feather file
-    Tt_processed.to_feather("../data/processed/large/Tt_processed_BIG.feather")
+    # Tt_processed.to_feather("../data/processed/large/Tt_processed_v3.feather")
     # load feather file
-    # Tt_processed = pd.read_feather("../data/processed/large/Tt_processed_BIG.feather")
+    # Tt_processed = pd.read_feather("../data/processed/large/Tt_processed_v3.feather")
 
     tf_idf_iot_devices = matching.calculate_tf_idf_for_iot_devices(w, Tt_total_time, fingerprints, domains_idf)
 
-    tf_idf_clients = matching.compute_tf_idf_for_clients(Tt_processed, w)
+    tf_idf_clients = matching.compute_tf_idf_for_clients(Tt_processed, w, domains_idf)
 
     # save to feather files
-    tf_idf_iot_devices['fingerprint'] = tf_idf_iot_devices['fingerprint'].apply(json.dumps)
-    tf_idf_iot_devices['tf_idf'] = tf_idf_iot_devices['tf_idf'].apply(json.dumps)
-    tf_idf_iot_devices.to_feather("../data/processed/large/tf_idf_iot_devices_BIG.feather")
-    tf_idf_clients['tf_idf'] = tf_idf_clients['tf_idf'].apply(json.dumps)
-    tf_idf_clients.to_feather("../data/processed/large/tf_idf_clients_BIG.feather")
+    # tf_idf_iot_devices['fingerprint'] = tf_idf_iot_devices['fingerprint'].apply(json.dumps)
+    # tf_idf_iot_devices['tf_idf'] = tf_idf_iot_devices['tf_idf'].apply(json.dumps)
+    # tf_idf_iot_devices.to_feather("../data/processed/large/tf_idf_iot_devices_v3.feather")
+    # tf_idf_clients['tf_idf'] = tf_idf_clients['tf_idf'].apply(json.dumps)
+    # tf_idf_clients.to_feather("../data/processed/large/tf_idf_clients_v3.feather")
 
     # read feather files
-    # tf_idf_iot_devices = pd.read_feather("../data/processed/large/tf_idf_iot_devices_BIG.feather")
-    # tf_idf_clients = pd.read_feather("../data/processed/large/tf_idf_clients_BIG.feather")
+    # tf_idf_iot_devices = pd.read_feather("../data/processed/large/tf_idf_iot_devices_v3.feather")
+    # tf_idf_clients = pd.read_feather("../data/processed/large/tf_idf_clients_v3.feather")
 
     # never comment out
     tf_idf_iot_devices['fingerprint'] = tf_idf_iot_devices['fingerprint'].apply(json.loads)

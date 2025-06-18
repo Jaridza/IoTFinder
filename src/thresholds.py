@@ -3,14 +3,12 @@ import math
 import numpy as np
 import pandas as pd
 import pyshark
-from pyarrow.feather import read_feather
 from sklearn.metrics import roc_curve
 from tqdm import tqdm
 
 from matching import compute_tf_idf_for_clients, compute_cosine_similarity
 
-
-def process_dns_queries(path):
+def process_dns_queries(path, filter_with_ips):
     """
     Process DNS queries from a pcap file and return a DataFrame with processed queries.
     No filtering is applied, all DNS queries are included.
@@ -19,19 +17,27 @@ def process_dns_queries(path):
     Returns:
         pd.DataFrame: DataFrame containing processed DNS queries.
     """
+
     dns_queries = pd.DataFrame(columns=['ip', 'query_name', 'timestamp'])
     queries_rows = []
 
-    with pyshark.FileCapture(input_file=path,display_filter='dns') as capture:
+    with pyshark.FileCapture(input_file=path, display_filter='dns') as capture:
         for packet in tqdm(capture, desc="Processing packets - no filtering.py"):
             if "DNS" not in packet:
                 continue
 
+            if not hasattr(packet, "ip") or not hasattr(packet, "dns"):
+                continue
+
             domain = packet.dns.qry_name
-            ip = packet.ip.dst
+            is_response = packet.dns.flags_response.lower() == 'true'
+            if filter_with_ips:
+                identifier = packet.ip.dst if is_response else packet.ip.src
+            else:
+                identifier = packet.eth.dst if is_response else packet.eth.src
 
             new_row = {
-                'ip': ip,
+                'ip': identifier,
                 'query_name': domain,
                 'timestamp': packet.frame_info.time_relative,
             }
@@ -41,6 +47,23 @@ def process_dns_queries(path):
 
     dns_queries['timestamp'] = pd.to_numeric(dns_queries['timestamp'])
     total_time = dns_queries['timestamp'].max() - dns_queries['timestamp'].min()
+
+    # print number of unique IPs
+    print(f"Number of unique IPs in the test dataset: {dns_queries['ip'].nunique()}")
+
+
+    # mapping = pd.read_csv("../data/raw/IoTDNS/device_mapping_iot.csv",
+                          # header=None,
+                          # names=["device_name_actual", "ip"])
+
+    # print("Devices found in the test dataset:")
+    # print(
+    #     dns_queries["ip"]
+    #     .str.lower()
+    #     .map(mapping.set_index("ip")["device_name_actual"])
+    #     .unique()
+    # )
+
 
     return dns_queries, total_time
 
@@ -69,30 +92,34 @@ def cosine_similarity_pairs(pairs1, pairs2):
     return dot / (norm1 * norm2) if (norm1 and norm2) else 0.0
 
 
-def calculate_thresholds(ldns_path, window_time, fingerprints, idf):
+def calculate_thresholds(ldns_path, window_time, fingerprints, domains_idf, device_mapping, filter_with_ips):
     """
     Calculate thresholds for IoT devices based on DNS queries.
     This function processes DNS packets, computes TF-IDF vectors for clients,
     and calculates thresholds based on ROC curve analysis.
     """
-    thresholds_client_queries, total_time = process_dns_queries(ldns_path)
+    thresholds_client_queries, total_time = process_dns_queries(ldns_path, filter_with_ips)
 
     mapping_df = pd.read_csv(
-        "../data/raw/IoTDNS/device_mapping.csv",  # replace with your path
+        device_mapping,
         header=None,
         names=["device_name", "ip"]
     )
+    print("LOOK HERE")
+    print(mapping_df.head())
 
     ip_to_name = dict(zip(mapping_df["ip"], mapping_df["device_name"]))
+    print(ip_to_name)
 
     # calculate tf-idf vectors
-    tf_idf_client = compute_tf_idf_for_clients(thresholds_client_queries,window_time)
+    tf_idf_client = compute_tf_idf_for_clients(thresholds_client_queries,window_time, domains_idf)
     dev_thresh = []
 
     for _,dev_k in fingerprints.iterrows():
         dev_tf_idf = dev_k['tf_idf']
         print("Device TF-IDF:", dev_tf_idf)
         dev_name = dev_k['device_name']
+        print("Device name:", dev_name)
         scores = []
         y_true = []
         for _, client_k in tf_idf_client.iterrows():
@@ -142,8 +169,6 @@ def calculate_thresholds(ldns_path, window_time, fingerprints, idf):
         dev_thresh.append({'device_name': dev_name, 'threshold': theta_k})
 
     thresholds_df = pd.DataFrame(dev_thresh)
-    # save to feather
-    thresholds_df.to_feather("../data/processed/thresholds_iot_devices.feather")
 
     print(thresholds_df)
     return thresholds_df

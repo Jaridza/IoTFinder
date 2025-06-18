@@ -3,24 +3,22 @@ import pandas as pd
 from tqdm import tqdm  # progress bar
 
 
-def build_dns_queries(pcap_file, popular_domains_file, filter_non_iot, non_iot_device_ips=None):
+def build_dns_queries(pcap_file, popular_domains_file, filter_with_ips, non_iot_device_ips=None):
     """    Build DNS queries DataFrame from a pcap file.
     Args:
         pcap_file (str): Path to the pcap file containing DNS queries.
         popular_domains_file (str): Path to a CSV file containing popular domains.
-        filter_non_iot (bool): Whether to filter out non-IoT devices based on IPs.
+        filter_with_ips (bool): Whether to filter out non-IoT devices based on IPs or based on MAC address.
         non_iot_device_ips (list): List of IPs of non-IoT devices to filter out.
     Returns:
         pd.DataFrame: DataFrame containing DNS queries with columns ['ip', 'query_name', 'timestamp'].
         pd.DataFrame: DataFrame containing domains queried by IoT devices.
     """
-
     # Load popular domains
     popular_domains = set(pd.read_csv(popular_domains_file, header=None)[1])
 
-    # Optionally: Load device mapping to filter out non-iot devices
-    if filter_non_iot and not filter_non_iot:
-        raise ValueError("You set filter_non_iot=True, but did not provide a list of non-IoT ips.")
+    # if filter_with_ips and not filter_non_iot:
+    #     raise ValueError("You set filter_non_iot=True, but did not provide a list of non-IoT ips.")
 
     iot_rows = set()
     domain_rows = set()
@@ -34,17 +32,31 @@ def build_dns_queries(pcap_file, popular_domains_file, filter_non_iot, non_iot_d
                 continue
 
             domain = packet.dns.qry_name
-            ip = packet.ip.dst
+            # ip = packet.ip.dst
             timestamp = packet.frame_info.time_relative
+            # mac = packet.eth.src
+            # is_response = 1 if packet.dns.flags_response else 0
+            is_response = packet.dns.flags_response.lower() == 'true'
 
             # filter out non-IoT devices if specified
-            if filter_non_iot and ip in non_iot_device_ips:
+            if filter_with_ips:
+                if is_response:
+                    identifier = packet.ip.dst
+                else:
+                    identifier = packet.ip.src
+            else:
+                if is_response:
+                    identifier = packet.eth.dst
+                else:
+                    identifier = packet.eth.src
+
+            if non_iot_device_ips and identifier in non_iot_device_ips:
                 continue
 
             if domain not in popular_domains:
                 domain_rows.add(domain)
 
-            iot_rows.add((ip, domain, timestamp))
+            iot_rows.add((identifier, domain, timestamp))
 
     iot_devices_queries = pd.DataFrame.from_records(
         list(iot_rows),

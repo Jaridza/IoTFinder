@@ -3,7 +3,7 @@ import pyshark
 from tqdm import tqdm
 import numpy as np
 
-def compute_idf(path, iot_domains):
+def compute_idf(path, iot_domains, filter_with_ips):
     """
     Compute the IDF (Inverse Document Frequency) for each fingerprint in the dataset.
     Args:
@@ -26,13 +26,17 @@ def compute_idf(path, iot_domains):
                 continue
 
             domain = packet.dns.qry_name
-            ip = packet.ip.dst
+            is_response = packet.dns.flags_response.lower() == 'true'
+            if filter_with_ips:
+                identifier = packet.ip.dst if is_response else packet.ip.src
+            else:
+                identifier = packet.eth.dst if is_response else packet.eth.src
 
             # check if domain is in domains df (then it is an iot domain in Q)
             # this is done to this dataset to filter and only get queries for the IoT domains in Q
             if domain in domains_set:
                 new_row = {
-                    'ip': ip,
+                    'ip': identifier,
                     'query_name': domain,
                     'timestamp': packet.frame_info.time_relative,
                 }

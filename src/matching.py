@@ -50,7 +50,7 @@ def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idf_df):
     fingerprints['tf_idf'] = tf_idf_column
     return fingerprints
 
-def compute_tf_idf_for_clients(dns_queries, w):
+def compute_tf_idf_for_clients(dns_queries, w, idf):
     """
     Compute the TF-IDF vectors for clients based on their DNS queries.
     This function calculates the probabilities of each query appearing in a given time window.
@@ -62,6 +62,11 @@ def compute_tf_idf_for_clients(dns_queries, w):
         The tf_idf column represents the DNS behavior of each client.
     """
     probabilities = compute_window_probabilities(dns_queries, w)
+    idf_series = idf.set_index('query_name')['idf']
+
+    # apply idf
+    probabilities['idf'] = probabilities['query_name'].map(idf_series).fillna(0)
+    probabilities['probabilities'] = probabilities['probabilities'] * probabilities['idf']
 
     client_tf_idf_vector = (probabilities.groupby('ip')
                             .apply(lambda x: pd.Series({'tf_idf': list(zip(x['query_name'], x['probabilities']))}),
@@ -181,8 +186,8 @@ def get_best_matches(scores_df, thresholds_df):
     #     scores_df.sort_values(by='similarity_score', ascending=False).groupby('client_ip', as_index=False).first())
     print("Best matches by absolute score:")
     print(best_by_score)
-    print(best_by_relative)
     print("Best matches by margin above threshold:")
+    print(best_by_relative)
     return best_by_relative
 
 

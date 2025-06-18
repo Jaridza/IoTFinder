@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+
 def compute_window_probabilities(query_df, window_size):
     """Compute the probabilities of each query appearing in a given time window.
     Args:
@@ -47,16 +48,29 @@ def build_fingerprints(query_df, window_time, device_mapping_file):
     fingerprints = (
         probabilities
         .groupby('ip')
-        .apply(lambda x: pd.Series({'fingerprint': list(zip(x['query_name'],x['probabilities']))}), include_groups=False)
+        .apply(lambda x: pd.Series({'fingerprint': list(zip(x['query_name'], x['probabilities']))}),
+               include_groups=False)
         .reset_index()
     )
-    # maybe should just say that here the user should provide a mapping file (device_name -> ip)
 
-    # THIS IS SPECIFIC TO THE DATASET - mapping device names to fingerprints
+    print("Fingerprintssss:")
+    print(fingerprints)
+
+    # mapping device names to fingerprints (device_name -> identifier (ip/mac address))
     mapping = pd.read_csv(device_mapping_file,
                           header=None,
                           names=["device_name", "ip"])
 
+    print("Mapping:")
+    print(mapping)
+
     fingerprints = fingerprints.merge(mapping, on='ip', how='left')
+
+    fingerprints = fingerprints.dropna(subset=['device_name'])
+
     fingerprints.drop(columns=['ip'], inplace=True)
+
+    print("Devices found in fingerprints:")
+    print(fingerprints['device_name'].unique())
+
     return fingerprints
