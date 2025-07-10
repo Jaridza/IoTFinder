@@ -11,7 +11,7 @@ from thresholds import calculate_thresholds, process_dns_queries
 
 def main():
     # TODO: fix the paths
-    # TODO: fix the ip list
+    # TODO: fix the ip list - they are hardcoded rn
     # TODO: change so that we can train the model once and use it for multiple test datasets
     root = os.path.dirname(os.path.dirname(__file__))
     train_data = os.path.join(root, "data/raw/temp/static_train_merged.pcap")
@@ -37,10 +37,6 @@ def main():
     "192.168.0.57","192.168.0.58","192.168.0.59","192.168.0.62","192.168.0.63",
     "192.168.0.64","192.168.0.67","192.168.0.68"
 ]
-    #iot analytics
-    # non_iot_device_ips = ["192.168.0.21", "192.168.0.22", "192.168.0.23", "192.168.0.24", "192.168.0.25",
-    #                       "192.168.0.60", "192.168.0.61", "192.168.0.62", "192.168.0.65", "192.168.0.69",
-    #                       "192.168.0.113", "192.168.0.138", "192.168.0.151", "192.168.0.159"]
     non_iot_device_ips = []
 
     iot_devices_exp12= ["40:ca:63:cf:0d:6a","20:1f:3b:08:7f:e3","c8:d7:78:52:31:90","00:31:92:e1:7b:17","74:da:88:5d:4c:3d"
