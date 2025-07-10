@@ -3,7 +3,7 @@ import pandas as pd
 from tqdm import tqdm  # progress bar
 
 
-def build_dns_queries(pcap_file, popular_domains_file, filter_with_ips, non_iot_device_ips=None):
+def build_dns_queries(pcap_file, popular_domains_file, filter_with_ips, non_iot_device_ips):
     """    Build DNS queries DataFrame from a pcap file.
     Args:
         pcap_file (str): Path to the pcap file containing DNS queries.
@@ -17,13 +17,14 @@ def build_dns_queries(pcap_file, popular_domains_file, filter_with_ips, non_iot_
     # Load popular domains
     popular_domains = set(pd.read_csv(popular_domains_file, header=None)[1])
 
-    # if filter_with_ips and not filter_non_iot:
-    #     raise ValueError("You set filter_non_iot=True, but did not provide a list of non-IoT ips.")
-
     iot_rows = set()
     domain_rows = set()
 
-    with pyshark.FileCapture(pcap_file, display_filter='dns') as capture:
+    # queries only
+    filter_expr = 'dns && dns.flags.response == 0'
+    filter_expr_IoTFinder = 'dns' #IoTFinder data only has responses
+
+    with pyshark.FileCapture(pcap_file, display_filter=filter_expr) as capture:
         for packet in tqdm(capture, desc="Processing IoTDNS packets"):
             if 'DNS' not in packet:
                 continue
@@ -32,10 +33,7 @@ def build_dns_queries(pcap_file, popular_domains_file, filter_with_ips, non_iot_
                 continue
 
             domain = packet.dns.qry_name
-            # ip = packet.ip.dst
             timestamp = packet.frame_info.time_relative
-            # mac = packet.eth.src
-            # is_response = 1 if packet.dns.flags_response else 0
             is_response = packet.dns.flags_response.lower() == 'true'
 
             # filter out non-IoT devices if specified
@@ -50,7 +48,7 @@ def build_dns_queries(pcap_file, popular_domains_file, filter_with_ips, non_iot_
                 else:
                     identifier = packet.eth.src
 
-            if non_iot_device_ips and identifier in non_iot_device_ips:
+            if identifier not in non_iot_device_ips:
                 continue
 
             if domain not in popular_domains:

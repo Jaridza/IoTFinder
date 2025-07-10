@@ -10,6 +10,7 @@ def compute_window_probabilities(query_df, window_size):
     Returns:
         pd.DataFrame: DataFrame with columns ['ip', 'query_name', 'window_count', 'probabilities'].
     """
+
     query_df = query_df.copy()
     query_df['timestamp'] = pd.to_numeric(query_df['timestamp'])
     total_time = float(query_df['timestamp'].max() - query_df['timestamp'].min())
@@ -53,24 +54,19 @@ def build_fingerprints(query_df, window_time, device_mapping_file):
         .reset_index()
     )
 
-    print("Fingerprintssss:")
-    print(fingerprints)
-
     # mapping device names to fingerprints (device_name -> identifier (ip/mac address))
     mapping = pd.read_csv(device_mapping_file,
                           header=None,
                           names=["device_name", "ip"])
 
-    print("Mapping:")
-    print(mapping)
 
     fingerprints = fingerprints.merge(mapping, on='ip', how='left')
 
-    fingerprints = fingerprints.dropna(subset=['device_name'])
+    fingerprints["device_name"] = fingerprints["device_name"].fillna("unknown")
 
     fingerprints.drop(columns=['ip'], inplace=True)
 
-    print("Devices found in fingerprints:")
-    print(fingerprints['device_name'].unique())
+    fingerprints['num_queries'] = fingerprints['fingerprint'].apply(lambda x: len(x))
+
 
     return fingerprints

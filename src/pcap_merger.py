@@ -36,11 +36,11 @@ def collect_pcap_files(inputs):
         elif os.path.isfile(path):
             files.append(path)
         else:
-            print(f"[Warning] '{path}' is not a file or directory, skipping.", file=sys.stderr)
+            print(f"'{path}' is not a file or directory, skipping.", file=sys.stderr)
     # Remove duplicates and sort
     unique_files = sorted(set(files))
     return unique_files
 
 
-inputs_files = collect_pcap_files(["/Users/jaridzatromp/Downloads/Experiment-2/Exp-2_static/"])
-merge_pcaps(inputs_files, "/Users/jaridzatromp/Downloads/Experiment-2/Exp-2_static/merged.pcap")
+inputs_files = collect_pcap_files(["/Users/jaridzatromp/Documents/IoTFinder/data/raw/IotAnalytics/"])
+merge_pcaps(inputs_files, "/Users/jaridzatromp/Documents/IoTFinder/data/raw/IotAnalytics_merged.pcap")

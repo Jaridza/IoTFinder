@@ -6,7 +6,7 @@ import pyshark
 from sklearn.metrics import roc_curve
 from tqdm import tqdm
 
-from matching import compute_tf_idf_for_clients, compute_cosine_similarity
+from matching import compute_tf_idf_for_clients
 
 def process_dns_queries(path, filter_with_ips):
     """
@@ -14,6 +14,7 @@ def process_dns_queries(path, filter_with_ips):
     No filtering is applied, all DNS queries are included.
     Args:
         path (str): Path to the pcap file.
+        filter_with_ips (bool): Whether to filter out non-IoT devices based on IPs or based on MAC address.
     Returns:
         pd.DataFrame: DataFrame containing processed DNS queries.
     """
@@ -22,7 +23,7 @@ def process_dns_queries(path, filter_with_ips):
     queries_rows = []
 
     with pyshark.FileCapture(input_file=path, display_filter='dns') as capture:
-        for packet in tqdm(capture, desc="Processing packets - no filtering.py"):
+        for packet in tqdm(capture, desc="Processing packets"):
             if "DNS" not in packet:
                 continue
 
@@ -47,23 +48,6 @@ def process_dns_queries(path, filter_with_ips):
 
     dns_queries['timestamp'] = pd.to_numeric(dns_queries['timestamp'])
     total_time = dns_queries['timestamp'].max() - dns_queries['timestamp'].min()
-
-    # print number of unique IPs
-    print(f"Number of unique IPs in the test dataset: {dns_queries['ip'].nunique()}")
-
-
-    # mapping = pd.read_csv("../data/raw/IoTDNS/device_mapping_iot.csv",
-                          # header=None,
-                          # names=["device_name_actual", "ip"])
-
-    # print("Devices found in the test dataset:")
-    # print(
-    #     dns_queries["ip"]
-    #     .str.lower()
-    #     .map(mapping.set_index("ip")["device_name_actual"])
-    #     .unique()
-    # )
-
 
     return dns_queries, total_time
 
@@ -105,11 +89,9 @@ def calculate_thresholds(ldns_path, window_time, fingerprints, domains_idf, devi
         header=None,
         names=["device_name", "ip"]
     )
-    print("LOOK HERE")
-    print(mapping_df.head())
 
     ip_to_name = dict(zip(mapping_df["ip"], mapping_df["device_name"]))
-    print(ip_to_name)
+    # print(ip_to_name)
 
     # calculate tf-idf vectors
     tf_idf_client = compute_tf_idf_for_clients(thresholds_client_queries,window_time, domains_idf)
@@ -117,9 +99,7 @@ def calculate_thresholds(ldns_path, window_time, fingerprints, domains_idf, devi
 
     for _,dev_k in fingerprints.iterrows():
         dev_tf_idf = dev_k['tf_idf']
-        print("Device TF-IDF:", dev_tf_idf)
         dev_name = dev_k['device_name']
-        print("Device name:", dev_name)
         scores = []
         y_true = []
         for _, client_k in tf_idf_client.iterrows():
@@ -132,28 +112,20 @@ def calculate_thresholds(ldns_path, window_time, fingerprints, domains_idf, devi
             y_true.append(1 if client_ip in ip_to_name and ip_to_name[client_ip] == dev_name else 0)
 
         # compute ROC curve
-        print("printing y-true and scores for device:", dev_name)
-        print(y_true)
-        print(scores)
         fpr, tpr, thresholds = roc_curve(y_true, scores)
-        print("FPR:", fpr)
-        print("TPR:", tpr)
-        print("Thresholds:", thresholds)
 
         phi = 0.001
-        print("before dropping inf‐thresholds:", thresholds)
+        # print("before dropping inf‐thresholds:", thresholds)
         # Drop the inf‐threshold entry up front:
         finite = np.isfinite(thresholds)
         fpr_f = fpr[finite]
         thr_f = thresholds[finite]
-        print("finite:", finite)
-        print("after dropping inf‐thresholds:", thr_f)
+        # print("finite:", finite)
+        # print("after dropping inf‐thresholds:", thr_f)
 
 
         if phi <= fpr_f[0]:
             theta_k = max(0.5, thr_f[0])
-        # elif phi >= fpr_f[-1]:
-        #     theta_k = max(0.5, thr_f[-1])
         else:
             low_index = np.max(np.where(fpr_f <= phi))
             high_index = np.min(np.where(fpr_f >= phi))
@@ -170,5 +142,4 @@ def calculate_thresholds(ldns_path, window_time, fingerprints, domains_idf, devi
 
     thresholds_df = pd.DataFrame(dev_thresh)
 
-    print(thresholds_df)
     return thresholds_df

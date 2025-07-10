@@ -4,7 +4,6 @@ import numpy as np
 
 from fingerprint import compute_window_probabilities
 
-
 def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idf_df):
     """
     Calculate the TF-IDF vector representation for IoT devices based on DNS queries.
@@ -18,13 +17,8 @@ def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idf_df):
     Returns:
         pd.DataFrame: DataFrame containing IoT device fingerprints with TF-IDF vectors.
     """
-    # Nt = total_time / w  # Number of time windows
     Nt = float(np.ceil(total_time / w))
 
-    # compute TF-IDF vector representation
-    # fkj = pkj * Nt
-    # we get vector Vk {(qkj, fkj)}
-    # we get TD-IDF: fkj * IDF (of domain)
 
     idf_dict = dict(zip(idf_df['query_name'], idf_df['idf']))
     tf_idf_column = []
@@ -48,6 +42,7 @@ def calculate_tf_idf_for_iot_devices(w, total_time, fingerprints, idf_df):
         tf_idf_column.append(tf_idf_row)
 
     fingerprints['tf_idf'] = tf_idf_column
+
     return fingerprints
 
 def compute_tf_idf_for_clients(dns_queries, w, idf):
@@ -119,75 +114,94 @@ def compute_cosine_similarity(psi, gamma):
     return similarity_score
 
 def compute_similarity_scores(fingerprints, client_tf_idf_vector, domains_idf):
-    """
-    Compute similarity scores between IoT device fingerprints and client TF-IDF vectors.
-    This function calculates the similarity score for each client against each IoT device.
-    Args:
-        fingerprints (pd.DataFrame): DataFrame containing IoT device fingerprints with 'fingerprint' column.
-        client_tf_idf_vector (pd.DataFrame): DataFrame containing client TF-IDF vectors with 'fingerprint' column.
-        domains_idf (pd.DataFrame): DataFrame containing IDF values for domains with 'query_name' and 'idf' columns.
-    Returns:
-        pd.DataFrame: DataFrame containing the best similarity scores for each client.
-    """
-    fingerprints['tf_idf_dict'] = (
-        fingerprints['tf_idf']
-        .apply(safe_dict_from_vec)
-    )
-    client_tf_idf_vector['tf_idf_dict'] = (
-        client_tf_idf_vector['tf_idf']
-        .apply(safe_dict_from_vec)
-    )
-
-    # turn into dictionary to loop up idf
+    # Prepare dicts for fast lookup
+    fingerprints['tf_idf_dict'] = fingerprints['tf_idf'].apply(safe_dict_from_vec)
+    client_tf_idf_vector['tf_idf_dict'] = client_tf_idf_vector['tf_idf'].apply(safe_dict_from_vec)
     idf_dict = dict(zip(domains_idf['query_name'], domains_idf['idf']))
 
-    scores = []  # (client, device, similarity score)
-    for _, dev in fingerprints.iterrows():
-        dev_name = dev['device_name']
-        dev_dict = dev['tf_idf_dict']
+    scores = []
+    # Loop per client
+    for _, client in client_tf_idf_vector.iterrows():
+        client_ip = client['ip']
+        c_dict = client['tf_idf_dict']
 
-        for _, client in client_tf_idf_vector.iterrows():
-            client_ip = client['ip']
-            client_dict = client['tf_idf_dict']
-            # dictionary: domain to frequency
-            cli_vec = {}
-            for domain, freq in client_dict.items():
-                idf = idf_dict.get(domain, 0.0)  # look up domain's IDF, default 0.0
-                cli_vec[domain] = freq * idf
+        # compare against every device fingerprint
+        for _, dev in fingerprints.iterrows():
+            dev_name = dev['device_name']
+            d_dict = dev['tf_idf_dict']
 
-            domains = list(dev_dict.keys())  # TODO: check if there can be duplicates here, if it was taken care of
-            psi = np.array([dev_dict[domain] for domain in domains])
-            gamma = np.array([cli_vec.get(domain, 0.0) for domain in domains])# if domain not found in client then set to 0
+            domains = list(d_dict.keys())
+            psi = np.array([d_dict[dom] for dom in domains])
+            gamma = np.array([c_dict.get(dom, 0.0) for dom in domains])
 
-            similarity_score = compute_cosine_similarity(psi, gamma)
-            scores.append((client_ip, dev_name, similarity_score))
+            # cosine similarity
+            score = compute_cosine_similarity(psi, gamma)
+            scores.append((client_ip, dev_name, score))
+
 
     scores_df = pd.DataFrame(scores, columns=['client_ip', 'device_name', 'similarity_score'])
     return scores_df
 
-
 def get_best_matches(scores_df, thresholds_df):
     """
-    Get the best matches for each client based on similarity scores and thresholds.
-    Args:
-        scores_df (pd.DataFrame): DataFrame containing similarity scores with 'client_ip', 'device_name', and 'similarity_score' columns.
-        thresholds_df (pd.DataFrame): DataFrame containing device thresholds with 'device_name' and 'threshold' columns.
-    Returns:
-        pd.DataFrame: DataFrame containing the best matches for each client.
+    Get the best matches for each client based on similarity scores and thresholds,
+    but if no device exceeds the threshold for a client, mark it as 'unknown'.
     """
-    merged = scores_df.merge(thresholds_df, on='device_name')
-    matches = merged[merged['similarity_score'] >= merged['threshold']].copy()
-    matches['relative'] = matches['similarity_score'] - matches['threshold']
+    # merge so we know each score's threshold
+    merged = scores_df.merge(thresholds_df, on='device_name', how='left')
 
-    best_by_score = matches.loc[matches.groupby('client_ip')['similarity_score'].idxmax()]
-    best_by_relative = matches.loc[matches.groupby('client_ip')['relative'].idxmax()]
+    # get only those above threshold
+    merged['passes'] = merged['similarity_score'] >= merged['threshold']
+    # merged['relative'] = merged['similarity_score'] - merged['threshold']
 
-    # best_scores = (
-    #     scores_df.sort_values(by='similarity_score', ascending=False).groupby('client_ip', as_index=False).first())
-    print("Best matches by absolute score:")
-    print(best_by_score)
-    print("Best matches by margin above threshold:")
-    print(best_by_relative)
-    return best_by_relative
+    # best match among those that pass
+    # passed = merged[merged['passes']]
+    all_passed = merged[merged['passes']].copy()
+
+    # best_passed = (passed
+    # .sort_values(['client_ip', 'relative'], ascending=[True, False])
+    # .groupby('client_ip', as_index=False)
+    # .first()[['client_ip', 'device_name', 'similarity_score', 'threshold', 'relative']])
+
+    best_passed = (
+        all_passed
+        .sort_values(['client_ip', 'similarity_score'], ascending=[True, False])
+        .groupby('client_ip', as_index=False)
+        .first()[['client_ip', 'device_name', 'similarity_score', 'threshold']]
+    )
+
+    # now find clients with no passing match
+    all_clients = scores_df['client_ip'].unique()
+    matched_clients = best_passed['client_ip'].unique()
+    unmatched = set(all_clients) - set(matched_clients)
+
+    # set “unknown” rows
+    unknown_rows = [{
+        'client_ip': ip,
+        'device_name': 'unknown',
+        'similarity_score': 0.0,
+        'threshold': np.nan,
+        'relative': 0.0
+    } for ip in unmatched]
+    unknown_df = pd.DataFrame(unknown_rows)
 
 
+    # combine
+    # result = pd.concat([best_passed, unknown_df], ignore_index=True)
+    # return result
+
+    # Combine best matches with unknowns
+    best_matches = pd.concat([best_passed, unknown_df], ignore_index=True)
+
+    # Build list of all passed matches per client
+    matches_map = (
+        all_passed
+        .groupby('client_ip')
+        .apply(lambda df: list(zip(df['device_name'], df['similarity_score'])))
+        .to_dict()
+    )
+
+    best_matches['all_matches'] = best_matches['client_ip'].map(matches_map).apply(
+        lambda x: x if isinstance(x, list) else [])
+
+    return best_matches
